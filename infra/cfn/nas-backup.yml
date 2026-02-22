@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: nas-backup stack with 3-block IAM policy for IP-restricted access.
+Description: nas-backup stack - Corrected for IAM runtime variables and validation.
 
 Parameters:
   environment:
@@ -37,7 +37,7 @@ Resources:
         - Key: 'cloudspout:repository'
           Value: 'cloudspout/nas-backup'
 
-  # IAM User with IP Tags
+  # IAM User
   NASBackupUser:
     Type: 'AWS::IAM::User'
     Properties:
@@ -54,7 +54,7 @@ Resources:
         - Key: 'cloudspout:fallback-ip'
           Value: '0.0.0.0/0'
 
-  # IAM Managed Policy
+  # IAM Managed Policy - Using ${!} to escape IAM runtime variables
   NASBackupManagedPolicy:
     Type: 'AWS::IAM::ManagedPolicy'
     Properties:
@@ -63,17 +63,17 @@ Resources:
       PolicyDocument:
         Version: '2012-10-17'
         Statement:
-          # BLOCK 1: Global Account Listing (IP Restricted)
+          # BLOCK 1: Global Account Listing
           - Effect: Allow
             Action: ['s3:ListAllMyBuckets']
             Resource: '*'
             Condition:
               IpAddress:
-                'aws:SourceIp': 
-                  - '${aws:PrincipalTag/cloudspout:home-ip}'
-                  - '${aws:PrincipalTag/cloudspout:fallback-ip}'
+                'aws:SourceIp':
+                  - !Sub '${!aws:PrincipalTag/cloudspout:home-ip}'
+                  - !Sub '${!aws:PrincipalTag/cloudspout:fallback-ip}'
 
-          # BLOCK 2: Bucket & Object Access via Home IP
+          # BLOCK 2: Home IP Access
           - Effect: Allow
             Action:
               - 's3:ListBucket'
@@ -89,9 +89,9 @@ Resources:
               - !Sub '${NASBackupBucket.Arn}/*'
             Condition:
               IpAddress:
-                'aws:SourceIp': '${aws:PrincipalTag/cloudspout:home-ip}'
+                'aws:SourceIp': !Sub '${!aws:PrincipalTag/cloudspout:home-ip}'
 
-          # BLOCK 3: Bucket & Object Access via Fallback IP
+          # BLOCK 3: Fallback IP Access
           - Effect: Allow
             Action:
               - 's3:ListBucket'
@@ -107,7 +107,7 @@ Resources:
               - !Sub '${NASBackupBucket.Arn}/*'
             Condition:
               IpAddress:
-                'aws:SourceIp': '${aws:PrincipalTag/cloudspout:fallback-ip}'
+                'aws:SourceIp': !Sub '${!aws:PrincipalTag/cloudspout:fallback-ip}'
 
   NASBackupUserAccessKey:
     Type: 'AWS::IAM::AccessKey'
@@ -128,8 +128,6 @@ Resources:
           Value: !Ref environment
         - Key: 'cloudspout:project'
           Value: 'nas-backup'
-        - Key: 'cloudspout:repository'
-          Value: 'cloudspout/nas-backup'
 
 Outputs:
   BucketName:
