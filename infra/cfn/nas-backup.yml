@@ -70,8 +70,14 @@ Resources:
             Condition:
               IpAddress:
                 'aws:SourceIp':
-                  - !Sub '${!aws:PrincipalTag/cloudspout:home-ip}'
-                  - !Sub '${!aws:PrincipalTag/cloudspout:fallback-ip}'
+                  - '${aws:PrincipalTag/cloudspout:home-ip}'
+          - Effect: Allow
+            Action: ['s3:ListAllMyBuckets']
+            Resource: '*'
+            Condition:
+              IpAddress:
+                'aws:SourceIp':
+                  - '${aws:PrincipalTag/cloudspout:fallback-ip}'
 
           # BLOCK 2: Home IP Access
           - Effect: Allow
@@ -89,7 +95,7 @@ Resources:
               - !Sub '${NASBackupBucket.Arn}/*'
             Condition:
               IpAddress:
-                'aws:SourceIp': !Sub '${!aws:PrincipalTag/cloudspout:home-ip}'
+                'aws:SourceIp': '${aws:PrincipalTag/cloudspout:home-ip}'
 
           # BLOCK 3: Fallback IP Access
           - Effect: Allow
@@ -107,7 +113,7 @@ Resources:
               - !Sub '${NASBackupBucket.Arn}/*'
             Condition:
               IpAddress:
-                'aws:SourceIp': !Sub '${!aws:PrincipalTag/cloudspout:fallback-ip}'
+                'aws:SourceIp': '${aws:PrincipalTag/cloudspout:fallback-ip}'
 
   NASBackupUserAccessKey:
     Type: 'AWS::IAM::AccessKey'
