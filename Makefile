@@ -2,7 +2,6 @@
 
 
 install:
-	brew install tfenv
 	brew install pre-commit gawk coreutils cfn-lint
 	brew install checkov semgrep markdownlint-cli shellcheck
 	pre-commit install
