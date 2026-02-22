@@ -1,15 +1,12 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: AWS CloudFormation for nas-backup with complete Multipart and Location permissions.
+Description: nas-backup stack with 3-block IAM policy for IP-restricted access.
 
 Parameters:
   environment:
     Type: String
     Default: prod
-    AllowedValues:
-      - dev
-      - stg
-      - prod
-    Description: The deployment environment (must be lowercase).
+    AllowedValues: [dev, stg, prod]
+    Description: Deployment environment (must be lowercase).
 
 Resources:
   # S3 Bucket
@@ -40,7 +37,7 @@ Resources:
         - Key: 'cloudspout:repository'
           Value: 'cloudspout/nas-backup'
 
-  # IAM Service User
+  # IAM User with IP Tags
   NASBackupUser:
     Type: 'AWS::IAM::User'
     Properties:
@@ -52,55 +49,90 @@ Resources:
           Value: 'nas-backup'
         - Key: 'cloudspout:repository'
           Value: 'cloudspout/nas-backup'
+        - Key: 'cloudspout:home-ip'
+          Value: '0.0.0.0/0'
+        - Key: 'cloudspout:fallback-ip'
+          Value: '0.0.0.0/0'
 
   # IAM Managed Policy
   NASBackupManagedPolicy:
     Type: 'AWS::IAM::ManagedPolicy'
     Properties:
       ManagedPolicyName: !Sub 'nas-backup-policy-${environment}'
-      Users:
-        - !Ref NASBackupUser
+      Users: [!Ref NASBackupUser]
       PolicyDocument:
         Version: '2012-10-17'
         Statement:
-          # 1. Account-level Global Access
+          # BLOCK 1: Global Account Listing (IP Restricted)
           - Effect: Allow
-            Action:
-              - 's3:ListAllMyBuckets'
+            Action: ['s3:ListAllMyBuckets']
             Resource: '*'
+            Condition:
+              IpAddress:
+                'aws:SourceIp': 
+                  - '${aws:PrincipalTag/cloudspout:home-ip}'
+                  - '${aws:PrincipalTag/cloudspout:fallback-ip}'
 
-          # 2. Bucket-level Access (Listing and Configuration)
+          # BLOCK 2: Bucket & Object Access via Home IP
           - Effect: Allow
             Action:
               - 's3:ListBucket'
               - 's3:GetBucketLocation'
-              - 's3:ListBucketMultipartUploads' # Required for resuming failed large uploads
-            Resource:
-              - !GetAtt NASBackupBucket.Arn
-
-          # 3. Object-level Access (Data movement)
-          - Effect: Allow
-            Action:
+              - 's3:ListBucketMultipartUploads'
               - 's3:PutObject'
               - 's3:GetObject'
               - 's3:DeleteObject'
-              - 's3:AbortMultipartUpload'      # Required to cancel failed chunks
-              - 's3:ListMultipartUploadParts'   # Required to verify uploaded chunks
+              - 's3:AbortMultipartUpload'
+              - 's3:ListMultipartUploadParts'
             Resource:
+              - !GetAtt NASBackupBucket.Arn
               - !Sub '${NASBackupBucket.Arn}/*'
+            Condition:
+              IpAddress:
+                'aws:SourceIp': '${aws:PrincipalTag/cloudspout:home-ip}'
 
-  # Access Key for the NAS
+          # BLOCK 3: Bucket & Object Access via Fallback IP
+          - Effect: Allow
+            Action:
+              - 's3:ListBucket'
+              - 's3:GetBucketLocation'
+              - 's3:ListBucketMultipartUploads'
+              - 's3:PutObject'
+              - 's3:GetObject'
+              - 's3:DeleteObject'
+              - 's3:AbortMultipartUpload'
+              - 's3:ListMultipartUploadParts'
+            Resource:
+              - !GetAtt NASBackupBucket.Arn
+              - !Sub '${NASBackupBucket.Arn}/*'
+            Condition:
+              IpAddress:
+                'aws:SourceIp': '${aws:PrincipalTag/cloudspout:fallback-ip}'
+
   NASBackupUserAccessKey:
     Type: 'AWS::IAM::AccessKey'
     Properties:
       UserName: !Ref NASBackupUser
 
+  NASBackupSecret:
+    Type: 'AWS::SecretsManager::Secret'
+    Properties:
+      Name: !Sub 'nas-backup-credentials-${environment}'
+      SecretString: !Sub |
+        {
+          "AccessKeyId": "${NASBackupUserAccessKey}",
+          "SecretAccessKey": "${NASBackupUserAccessKey.SecretAccessKey}"
+        }
+      Tags:
+        - Key: 'cloudspout:environment'
+          Value: !Ref environment
+        - Key: 'cloudspout:project'
+          Value: 'nas-backup'
+        - Key: 'cloudspout:repository'
+          Value: 'cloudspout/nas-backup'
+
 Outputs:
   BucketName:
     Value: !Ref NASBackupBucket
-  IAMUserName:
-    Value: !Ref NASBackupUser
-  AccessKeyId:
-    Value: !Ref NASBackupUserAccessKey
-  SecretAccessKey:
-    Value: !GetAtt NASBackupUserAccessKey.SecretAccessKey
+  SecretARN:
+    Value: !Ref NASBackupSecret
